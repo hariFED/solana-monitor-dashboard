@@ -1,43 +1,95 @@
-// src/app/page.tsx
-import Sidebar from "@/components/layout/Sidebar";
-import Topbar from "@/components/layout/Topbar";
-import OverviewCard from "@/components/dashboard/OverviewCard";
-import SuspiciousList from "@/components/dashboard/SuspiciousList";
+"use client"
+
+import React, { useState, useCallback } from 'react';
+import { SleepingGiants } from '@/components/dashboard/SleepingGiants';
+import { AlertHistory } from '@/components/dashboard/AlertHistory';
+import { Settings } from '@/components/dashboard/Settings';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { WalletAlert, sendNotification } from '@/lib/notifications';
 
 export default function DashboardPage() {
+  // State for alerts
+  const [alerts, setAlerts] = useState<WalletAlert[]>([]);
+
+  // State for settings
+  const [minBalance, setMinBalance] = useState(10000); // 10K SOL
+  const [minInactiveDays, setMinInactiveDays] = useState(180); // 6 months
+  const [notificationSettings, setNotificationSettings] = useState({
+    telegram: false,
+    discord: false,
+    email: false,
+  });
+
+  // Handler for notification settings updates
+  const handleNotificationUpdate = (key: 'telegram' | 'discord' | 'email', value: boolean) => {
+    setNotificationSettings(prev => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  // Handler for new alerts
+  const handleAlert = useCallback(async (alert: WalletAlert) => {
+    // Add alert to history
+    setAlerts(prev => [alert, ...prev]);
+
+    // Send notifications based on settings
+    try {
+      await sendNotification(alert, {
+        emailEnabled: notificationSettings.email,
+        emailAddress: process.env.NEXT_PUBLIC_ALERT_EMAIL,
+        telegramEnabled: notificationSettings.telegram,
+        telegramBotToken: process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN,
+        telegramChatId: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID,
+        discordEnabled: notificationSettings.discord,
+        discordWebhook: process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL,
+        minBalance: minBalance,
+        inactivityThreshold: minInactiveDays,
+      });
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+    }
+  }, [notificationSettings, minBalance, minInactiveDays]);
+
   return (
-    <div className="flex min-h-screen w-full bg-muted/40">
-      <Sidebar />
-      <div className="flex flex-col flex-grow md:ml-64"> {/* Adjust margin-left to match sidebar width */}
-        <Topbar />
-        <main className="flex-1 p-4 pt-20 md:p-6 md:pt-20"> {/* Add padding top for fixed Topbar */}
-          {/* Grid Layout for Content */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-6">
-            {/* Overview Card takes one column */}
-            <div className="lg:col-span-1">
-              <OverviewCard />
-            </div>
-            {/* Add more small cards here if needed */}
-            {/* Example placeholder cards */}
-            {/*
-             <Card className="lg:col-span-1">
-                <CardHeader><CardTitle className="text-sm font-medium">Active Wallets</CardTitle></CardHeader>
-                <CardContent><div className="text-2xl font-bold">589</div></CardContent>
-            </Card>
-            <Card className="lg:col-span-1">
-                <CardHeader><CardTitle className="text-sm font-medium">Network TPS</CardTitle></CardHeader>
-                <CardContent><div className="text-2xl font-bold">2,150</div></CardContent>
-            </Card>
-            */}
-          </div>
-
-          {/* Suspicious List taking full width (or spanning multiple columns) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <SuspiciousList />
-          </div>
-
-        </main>
+    <main className="container mx-auto p-4 space-y-4">
+      <div className="flex flex-col space-y-2">
+        <h1 className="text-3xl font-bold">Sleeping Giants Wallet Tracker</h1>
+        <p className="text-muted-foreground">
+          Monitor inactive but heavily loaded Solana wallets and get alerts when they wake up.
+        </p>
       </div>
-    </div>
+
+      <Tabs defaultValue="tracker" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="tracker">💤 Tracker</TabsTrigger>
+          <TabsTrigger value="alerts">⚠️ Alerts</TabsTrigger>
+          <TabsTrigger value="settings">⚙️ Settings</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tracker" className="space-y-4">
+          <SleepingGiants
+            onAlert={handleAlert}
+            minBalance={minBalance}
+            minInactiveDays={minInactiveDays}
+          />
+        </TabsContent>
+
+        <TabsContent value="alerts" className="space-y-4">
+          <AlertHistory alerts={alerts} />
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-4">
+          <Settings
+            minBalance={minBalance}
+            setMinBalance={setMinBalance}
+            minInactiveDays={minInactiveDays}
+            setMinInactiveDays={setMinInactiveDays}
+            notificationSettings={notificationSettings}
+            onUpdateNotifications={handleNotificationUpdate}
+          />
+        </TabsContent>
+      </Tabs>
+    </main>
   );
 }
